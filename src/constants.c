@@ -493,6 +493,7 @@ paper_to_string (scidow_paper_size size)
   case B169:
     return B169_STR;
   }
+  return NULL;
 }
 
 
@@ -572,6 +573,7 @@ paper_to_gtkstr (scidow_paper_size size)
   case B169:
     return B169_STR;
   }
+  return NULL;
 }
 
 

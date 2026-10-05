@@ -677,13 +677,27 @@ rndr_head(hoedown_buffer *ob, metadata * doc_meta, ext_definition * extension)
 	{
 		hoedown_buffer_printf(ob, "<meta name=\"keywords\" content=\"%s\">\n", doc_meta->keywords);
 	}
-	if (doc_meta->style)
-	{
-		hoedown_buffer_printf(ob, "<link rel=\"stylesheet\" href=\"%s\">\n", doc_meta->style);
-	}
 	if (extension && extension->extra_header)
 	{
 		hoedown_buffer_puts(ob, extension->extra_header);
+	}
+	if (doc_meta->style)
+	{
+		/* Preserve the stylesheet's URL origin and allow the host to order it
+		 * within its author cascade. Emit after the host's base/layer declaration. */
+		hoedown_buffer_puts(ob, "<style>@import url(\"");
+		for (const char *p = doc_meta->style; *p; p++) {
+			if (*p == '<')
+				hoedown_buffer_puts(ob, "\\3c ");
+			else if (*p == '\n' || *p == '\r')
+				hoedown_buffer_putc(ob, ' ');
+			else {
+				if (*p == '"' || *p == '\\')
+					hoedown_buffer_putc(ob, '\\');
+				hoedown_buffer_putc(ob, *p);
+			}
+		}
+		hoedown_buffer_puts(ob, "\") layer(scidown-document);</style>\n");
 	}
 
 	hoedown_buffer_puts(ob, "</head>\n<body>\n");

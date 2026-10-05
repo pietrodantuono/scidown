@@ -167,38 +167,32 @@ is_separator(uint8_t chr)
 	return chr == ' ' || chr == '(' || chr == '\t' || chr == '\n';
 }
 
- static int
- is_regular_file(const char *path, char * base_folder)
- {
- 	if (path[0] != '/') {
- 		char *cwd;
+static char *
+file_path(const char *path, const char *base_folder)
+{
+	if (path == NULL)
+		return NULL;
+	/* stat/fopen already resolve relative paths against the working directory. */
+	if (path[0] == '/' || base_folder == NULL)
+		return strdup(path);
+	size_t length = strlen(base_folder) + strlen(path) + 2;
+	char *resolved = malloc(length);
+	if (resolved != NULL)
+		snprintf(resolved, length, "%s/%s", base_folder, path);
+	return resolved;
+}
 
- 		if (base_folder != NULL) {
-			int n1 = strlen(base_folder);
- 			int n2 = strlen(path);
- 			int n =  n1 + n2 + 2;
- 			cwd = malloc(n*sizeof(char));
- 			cwd[n-1] = 0;
- 			memcpy(cwd, base_folder, n1);
- 			cwd[n1] = '/';
- 			memcpy(cwd+n1+1, path, n2);
- 		} else {
- 			cwd = malloc(256*sizeof(char));
- 			memset(cwd, 0, 256);
- 			getcwd(cwd, 256);
- 			strcat(cwd, "/");
- 			strcat(cwd, path);
-	 	}
- 		struct stat path_stat;
-	    stat(cwd, &path_stat);
-	    free(cwd);
-	    return S_ISREG(path_stat.st_mode);
- 	}
-
-    struct stat path_stat;
-    stat(path, &path_stat);
-    return S_ISREG(path_stat.st_mode);
- }
+static int
+is_regular_file(const char *path, char *base_folder)
+{
+	char *resolved = file_path(path, base_folder);
+	if (resolved == NULL)
+		return 0;
+	struct stat path_stat;
+	int regular = stat(resolved, &path_stat) == 0 && S_ISREG(path_stat.st_mode);
+	free(resolved);
+	return regular;
+}
 
 static hoedown_buffer *
 newbuf(hoedown_document *doc, int type)
@@ -840,43 +834,28 @@ parse_math(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offs
 static char*
 load_file(const char* path, char* base_folder, size_t * size)
 {
-	if (path == NULL)
+	*size = 0;
+	char *resolved = file_path(path, base_folder);
+	if (resolved == NULL)
 		return NULL;
-	FILE *f;
-	if (path[0] != '/') {
-		char *cwd;
-
-		if (base_folder != NULL) {
-			int n1 = strlen(base_folder);
-			int n2 = strlen(path);
-			int n =  n1 + n2 + 2;
-			cwd = malloc(n*sizeof(char));
-			cwd[n-1] = 0;
-			memcpy(cwd, base_folder, n1);
-			cwd[n1] = '/';
-			memcpy(cwd+n1+1, path, n2);
-		} else {
-			cwd = malloc(128*sizeof(char));
-			memset(cwd, 0, 128);
-			getcwd(cwd, 128);
-			strcat(cwd, "/");
-			strcat(cwd, path);
-		}
-		f =fopen(cwd, "rb");
-		free(cwd);
+	FILE *f = fopen(resolved, "rb");
+	free(resolved);
+	if (f == NULL)
+		return NULL;
+	long length;
+	if (fseek(f, 0, SEEK_END) != 0 || (length = ftell(f)) < 0 || fseek(f, 0, SEEK_SET) != 0) {
+		fclose(f);
+		return NULL;
 	}
-	else
-		f = fopen(path, "rb");
-
-	fseek(f, 0, SEEK_END);
-	*size = ftell(f);
-	fseek(f, 0, SEEK_SET);
-
-	char *string = malloc(*size + 1);
-	fread(string, *size, 1, f);
+	char *string = malloc((size_t)length + 1);
+	if (string == NULL || fread(string, 1, (size_t)length, f) != (size_t)length) {
+		free(string);
+		fclose(f);
+		return NULL;
+	}
 	fclose(f);
-
-	string[*size] = 0;
+	*size = (size_t)length;
+	string[length] = 0;
 	return string;
 }
 
@@ -902,7 +881,9 @@ parse_include(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t o
 			size_t neu_size = 0;
 			char * buffer = load_file(path, doc->base_folder, &neu_size);
 
-			sub_render(doc, ob, (uint8_t*)buffer, neu_size, 0);
+			if (buffer != NULL)
+				sub_render(doc, ob, (uint8_t*)buffer, neu_size, 0);
+			free(buffer);
 
 		}
 		free(path);
@@ -3788,8 +3769,8 @@ find_references(hoedown_document *doc, const uint8_t *data, size_t size, html_co
 			if (text_size && text)
 			{
 				find_references(doc,(const uint8_t*) text, text_size, counter);
-				free(text);
 			}
+			free(text);
 		}
 	}
 }

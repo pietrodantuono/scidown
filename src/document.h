@@ -262,6 +262,7 @@ void hoedown_document_free(hoedown_document *doc);
 
 
 metadata* document_metadata(const uint8_t *data, size_t size);
+void free_meta(metadata *meta);
 
 #ifdef __cplusplus
 }
